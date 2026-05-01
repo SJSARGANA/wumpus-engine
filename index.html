@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dynamic Wumpus Logic Agent</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f4f7;
+      margin: 20px;
+      color: #222;
+    }
+
+    h2 {
+      margin-bottom: 8px;
+    }
+
+    .controls {
+      background: white;
+      padding: 14px;
+      border: 1px solid #ccc;
+      width: fit-content;
+      margin-bottom: 15px;
+    }
+
+    input, button {
+      padding: 7px;
+      margin: 4px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    #main {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    #grid {
+      display: grid;
+      gap: 5px;
+      width: fit-content;
+    }
+
+    .cell {
+      width: 82px;
+      height: 82px;
+      border: 1px solid #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      white-space: pre-line;
+      font-size: 12px;
+      background: #b8b8b8;
+    }
+
+    .unknown {
+      background: #b8b8b8;
+    }
+
+    .frontier {
+      background: #d8d8d8;
+    }
+
+    .safe {
+      background: #83df83;
+    }
+
+    .visited {
+      background: #bcd7ff;
+    }
+
+    .suspected {
+      background: #ffd98a;
+    }
+
+    .confirmed {
+      background: #ff7777;
+    }
+
+    .dead {
+      background: #333;
+      color: white;
+    }
+
+    .agent {
+      outline: 4px solid black;
+      font-weight: bold;
+    }
+
+    .home {
+      border: 3px solid #26547c;
+    }
+
+    .gold {
+      box-shadow: inset 0 0 0 4px #d4a017;
+    }
+
+    #dashboard {
+      background: white;
+      padding: 15px;
+      border: 1px solid #ccc;
+      width: 390px;
+    }
+
+    .box {
+      background: #f8f8f8;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+    }
+
+    .label {
+      font-weight: bold;
+    }
+
+    #log {
+      height: 165px;
+      overflow-y: auto;
+      background: #111;
+      padding: 10px;
+      font-size: 12px;
+      white-space: pre-line;
+    }
+
+    .log-move {
+      color: #9fd3ff;
+    }
+
+    .log-safe {
+      color: #8fff8f;
+    }
+
+    .log-danger {
+      color: #ff8888;
+    }
+
+    .log-info {
+      color: #eeeeee;
+    }
+
+    .log-gold {
+      color: #ffd966;
+    }
+
+    #legend {
+      margin-top: 10px;
+      background: white;
+      border: 1px solid #ccc;
+      padding: 10px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .legend-box {
+      width: 22px;
+      height: 22px;
+      border: 1px solid #222;
+      margin-right: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>Dynamic Wumpus Logic Agent</h2>
+
+  <div class="controls">
+    <label>Rows:</label>
+    <input id="rows" type="number" value="4" min="2" max="8">
+
+    <label>Columns:</label>
+    <input id="cols" type="number" value="4" min="2" max="8">
+
+    <label>Pit %:</label>
+    <input id="pitRate" type="number" value="18" min="5" max="35">
+
+    <label>Speed:</label>
+    <input id="speed" type="range" value="700" min="200" max="2000" step="100">
+    <span id="speedText">700 ms</span>
+
+    <button onclick="startGame()">Start New Game</button>
+    <button onclick="moveAgent()">Move One Step</button>
+    <button onclick="autoRun()">Auto Run</button>
+    <button onclick="stopRun()">Stop</button>
+  </div>
+
+  <div id="main">
+    <div id="grid"></div>
+
+    <div id="dashboard">
+      <div class="box">
+        <div><span class="label">Current Cell:</span> <span id="cellInfo">-</span></div>
+        <div><span class="label">Current Percepts:</span> <span id="percepts">None</span></div>
+        <div><span class="label">Agent Status:</span> <span id="status">Start the game</span></div>
+      </div>
+
+      <div class="box">
+        <div><span class="label">Resolution Steps:</span> <span id="steps">0</span></div>
+        <div><span class="label">KB Clauses:</span> <span id="clauseCount">0</span></div>
+        <div><span class="label">Safe Cells Known:</span> <span id="safeCount">0</span></div>
+        <div><span class="label">Confirmed Hazards:</span> <span id="hazardCount">0</span></div>
+      </div>
+
+      <div class="box">
+        <div><span class="label">Gold:</span> <span id="goldStatus">Not found</span></div>
+      </div>
+
+      <div id="log"></div>
+
+      <div id="legend">
+        <div class="label">Legend</div>
+        <div class="legend-row"><span class="legend-box" style="background:#b8b8b8;"></span>Unknown</div>
+        <div class="legend-row"><span class="legend-box" style="background:#d8d8d8;"></span>Frontier</div>
+        <div class="legend-row"><span class="legend-box" style="background:#ffd98a;"></span>Suspected</div>
+        <div class="legend-row"><span class="legend-box" style="background:#83df83;"></span>Safe but Unvisited</div>
+        <div class="legend-row"><span class="legend-box" style="background:#bcd7ff;"></span>Visited</div>
+        <div class="legend-row"><span class="legend-box" style="background:#ff7777;"></span>Logically Confirmed Hazard</div>
+        <div class="legend-row"><span class="legend-box" style="background:#333;"></span>Agent Death Cell</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let rows, cols, pitRate
+    let agent, pits, wumpus, gold
+    let visited, safeCells, frontierCells, suspectedCells
+    let confirmedHazards, deathCells, checkQueue
+    let clauses, totalSteps
+    let hasGold, alive, finished, timer
+
+    document.getElementById("speed").oninput = function () {
+      document.getElementById("speedText").innerText = this.value + " ms"
+    }
+
+    function cellKey(r, c) {
+      return r + "," + c
+    }
+
+    function pitVar(r, c) {
+      return "P_" + r + "_" + c
+    }
+
+    function wumpusVar(r, c) {
+      return "W_" + r + "_" + c
+    }
+
+    function safeVar(r, c) {
+      return "SAFE_" + r + "_" + c
+    }
+
+    function breezeVar(r, c) {
+      return "B_" + r + "_" + c
+    }
+
+    function stenchVar(r, c) {
+      return "S_" + r + "_" + c
+    }
+
+    function neg(literal) {
+      if (literal.startsWith("~")) return literal.slice(1)
+      return "~" + literal
+    }
+
+    function isNeg(a, b) {
+      return neg(a) === b
+    }
+
+    function clauseKey(clause) {
+      return [...clause].sort().join("|")
+    }
+
+    function hasTautology(clause) {
+      for (let x of clause) {
+        if (clause.includes(neg(x))) return true
+      }
+      return false
+    }
+
+    function addClause(clause) {
+      let clean = [...new Set(clause)]
+
+      if (hasTautology(clean)) return
+
+      clauses.set(clauseKey(clean), clean)
+    }
+
+    function neighbors(r, c) {
+      let list = []
+
+      if (r > 0) list.push([r - 1, c])
+      if (r < rows - 1) list.push([r + 1, c])
+      if (c > 0) list.push([r, c - 1])
+      if (c < cols - 1) list.push([r, c + 1])
+
+      return list
+    }
+
+    function randomCell() {
+      return [
+        Math.floor(Math.random() * rows),
+        Math.floor(Math.random() * cols)
+      ]
+    }
+
+    function startGame() {
+      stopRun()
+
+      rows = parseInt(document.getElementById("rows").value)
+      cols = parseInt(document.getElementById("cols").value)
+      pitRate = parseInt(document.getElementById("pitRate").value)
+
+      agent = [0, 0]
+      pits = new Set()
+      visited = new Set()
+      safeCells = new Set()
+      frontierCells = new Set()
+      suspectedCells = new Set()
+      confirmedHazards = new Set()
+      deathCells = new Set()
+      checkQueue = new Set()
+      clauses = new Map()
+
+      totalSteps = 0
+      hasGold = false
+      alive = true
+      finished = false
+
+      document.getElementById("log").innerHTML = ""
+
+      let pitCount = Math.max(1, Math.floor(rows * cols * pitRate / 100))
+
+      while (pits.size < pitCount) {
+        let [r, c] = randomCell()
+
+        if (r !== 0 || c !== 0) {
+          pits.add(cellKey(r, c))
+        }
+      }
+
+      while (true) {
+        let [r, c] = randomCell()
+
+        if ((r !== 0 || c !== 0) && !pits.has(cellKey(r, c))) {
+          wumpus = [r, c]
+          break
+        }
+      }
+
+      while (true) {
+        let [r, c] = randomCell()
+
+        if ((r !== 0 || c !== 0) && !pits.has(cellKey(r, c)) && !(r === wumpus[0] && c === wumpus[1])) {
+          gold = [r, c]
+          break
+        }
+      }
+
+      addGeneralSafetyRules()
+      tellCurrentCell()
+      inferRelevantCells()
+
+      drawGrid()
+      updateDashboard("Game started")
+      logText("Agent started at [0,0].", "info")
+    }
+
+    function addGeneralSafetyRules() {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          addClause(["~" + safeVar(r, c), "~" + pitVar(r, c)])
+          addClause(["~" + safeVar(r, c), "~" + wumpusVar(r, c)])
+          addClause([pitVar(r, c), wumpusVar(r, c), safeVar(r, c)])
+        }
+      }
+    }
+
+    function hasBreeze(r, c) {
+      return neighbors(r, c).some(([nr, nc]) => pits.has(cellKey(nr, nc)))
+    }
+
+    function hasStench(r, c) {
+      return neighbors(r, c).some(([nr, nc]) => nr === wumpus[0] && nc === wumpus[1])
+    }
+
+    function tellBiconditional(symbol, causes) {
+      addClause(["~" + symbol, ...causes])
+
+      for (let cause of causes) {
+        addClause(["~" + cause, symbol])
+      }
+    }
+
+    function addCellsToCheck(cells) {
+      for (let [r, c] of cells) {
+        checkQueue.add(cellKey(r, c))
+
+        for (let [nr, nc] of neighbors(r, c)) {
+          checkQueue.add(cellKey(nr, nc))
+        }
+      }
+    }
+
+    function tellCurrentCell() {
+      let r = agent[0]
+      let c = agent[1]
+      let current = cellKey(r, c)
+
+      visited.add(current)
+      safeCells.add(current)
+      suspectedCells.delete(current)
+      frontierCells.delete(current)
+
+      addClause(["~" + pitVar(r, c)])
+      addClause(["~" + wumpusVar(r, c)])
+      addClause([safeVar(r, c)])
+
+      let adj = neighbors(r, c)
+      let pitCauses = adj.map(([nr, nc]) => pitVar(nr, nc))
+      let wumpusCauses = adj.map(([nr, nc]) => wumpusVar(nr, nc))
+
+      tellBiconditional(breezeVar(r, c), pitCauses)
+      tellBiconditional(stenchVar(r, c), wumpusCauses)
+
+      let breeze = hasBreeze(r, c)
+      let stench = hasStench(r, c)
+
+      if (breeze) {
+        addClause([breezeVar(r, c)])
+      } else {
+        addClause(["~" + breezeVar(r, c)])
+      }
+
+      if (stench) {
+        addClause([stenchVar(r, c)])
+      } else {
+        addClause(["~" + stenchVar(r, c)])
+      }
+
+      for (let [nr, nc] of adj) {
+        let nk = cellKey(nr, nc)
+
+        if (!visited.has(nk)) {
+          frontierCells.add(nk)
+        }
+
+        if ((breeze || stench) && !safeCells.has(nk)) {
+          suspectedCells.add(nk)
+        }
+      }
+
+      addCellsToCheck([[r, c], ...adj])
+
+      let p = []
+
+      if (breeze) p.push("Breeze")
+      if (stench) p.push("Stench")
+      if (p.length === 0) p.push("None")
+
+      document.getElementById("percepts").innerText = p.join(", ")
+      document.getElementById("cellInfo").innerText = "[" + r + "," + c + "]"
+
+      if (r === gold[0] && c === gold[1] && !hasGold) {
+        hasGold = true
+        logText("Gold found. Agent will return home.", "gold")
+      }
+    }
+
+    function resolvePair(c1, c2) {
+      let results = []
+
+      for (let a of c1) {
+        for (let b of c2) {
+          if (isNeg(a, b)) {
+            let next = []
+
+            for (let x of c1) {
+              if (x !== a && !next.includes(x)) {
+                next.push(x)
+              }
+            }
+
+            for (let y of c2) {
+              if (y !== b && !next.includes(y)) {
+                next.push(y)
+              }
+            }
+
+            if (!hasTautology(next)) {
+              results.push(next)
+            }
+          }
+        }
+      }
+
+      return results
+    }
+
+    function entails(query) {
+      let baseClauses = Array.from(clauses.values()).map(c => [...c])
+      let support = [[neg(query)]]
+      let allClauses = [...baseClauses, ...support]
+      let known = new Set(allClauses.map(clauseKey))
+      let maxClauses = 8000
+
+      while (support.length > 0 && allClauses.length < maxClauses) {
+        let newSupport = []
+
+        for (let s of support) {
+          for (let c of allClauses) {
+            totalSteps++
+
+            let resolvents = resolvePair(s, c)
+
+            for (let r of resolvents) {
+              if (r.length === 0) {
+                return true
+              }
+
+              let k = clauseKey(r)
+
+              if (!known.has(k)) {
+                known.add(k)
+                newSupport.push(r)
+                allClauses.push(r)
+
+                if (allClauses.length >= maxClauses) {
+                  return false
+                }
+              }
+            }
+          }
+        }
+
+        support = newSupport
+      }
+
+      return false
+    }
+
+    function inferRelevantCells() {
+      let cells = Array.from(checkQueue)
+      checkQueue.clear()
+
+      for (let key of cells) {
+        let parts = key.split(",")
+        let r = parseInt(parts[0])
+        let c = parseInt(parts[1])
+
+        let noPit = entails("~" + pitVar(r, c))
+        let noWumpus = entails("~" + wumpusVar(r, c))
+        let pitKnown = entails(pitVar(r, c))
+        let wumpusKnown = entails(wumpusVar(r, c))
+
+        if (noPit && noWumpus) {
+          safeCells.add(key)
+          suspectedCells.delete(key)
+          addClause([safeVar(r, c)])
+        }
+
+        if (pitKnown || wumpusKnown) {
+          confirmedHazards.add(key)
+          safeCells.delete(key)
+          suspectedCells.delete(key)
+        }
+      }
+    }
+
+    function findPath(targetKey, allowVisited) {
+      let start = cellKey(agent[0], agent[1])
+      let queue = [start]
+      let parent = new Map()
+
+      parent.set(start, null)
+
+      while (queue.length > 0) {
+        let current = queue.shift()
+
+        if (current === targetKey) {
+          let path = []
+          let x = current
+
+          while (x !== null) {
+            path.unshift(x)
+            x = parent.get(x)
+          }
+
+          return path
+        }
+
+        let parts = current.split(",")
+        let r = parseInt(parts[0])
+        let c = parseInt(parts[1])
+
+        for (let [nr, nc] of neighbors(r, c)) {
+          let nk = cellKey(nr, nc)
+          let allowed = safeCells.has(nk)
+
+          if (allowVisited && visited.has(nk)) {
+            allowed = true
+          }
+
+          if (!parent.has(nk) && allowed) {
+            parent.set(nk, current)
+            queue.push(nk)
+          }
+        }
+      }
+
+      return null
+    }
+
+    function chooseTarget() {
+      if (hasGold) {
+        return cellKey(0, 0)
+      }
+
+      let bestPath = null
+
+      for (let key of safeCells) {
+        if (!visited.has(key)) {
+          let path = findPath(key, false)
+
+          if (path && (!bestPath || path.length < bestPath.length)) {
+            bestPath = path
+          }
+        }
+      }
+
+      if (bestPath) {
+        return bestPath[bestPath.length - 1]
+      }
+
+      return null
+    }
+
+    function moveAgent() {
+      if (!alive || finished) return
+
+      inferRelevantCells()
+
+      let target = chooseTarget()
+
+      if (!target) {
+        updateDashboard("No provably safe unvisited cell found")
+        drawGrid()
+        logText("Agent stopped because no safe move is provable.", "danger")
+        return
+      }
+
+      let path = findPath(target, hasGold)
+
+      if (!path || path.length < 2) {
+        if (hasGold && agent[0] === 0 && agent[1] === 0) {
+          finished = true
+          updateDashboard("Agent returned home with gold")
+          logText("Mission completed successfully.", "gold")
+        } else {
+          updateDashboard("Agent is waiting")
+        }
+
+        drawGrid()
+        return
+      }
+
+      let next = path[1].split(",")
+      agent = [parseInt(next[0]), parseInt(next[1])]
+
+      let current = cellKey(agent[0], agent[1])
+
+      if (pits.has(current) || (agent[0] === wumpus[0] && agent[1] === wumpus[1])) {
+        alive = false
+        deathCells.add(current)
+        updateDashboard("Agent died after entering a dangerous cell")
+        logText("Agent died at [" + agent[0] + "," + agent[1] + "]. Hazard is not marked as confirmed unless proved by KB.", "danger")
+        drawGrid()
+        return
+      }
+
+      tellCurrentCell()
+      inferRelevantCells()
+
+      if (hasGold && agent[0] === 0 && agent[1] === 0) {
+        finished = true
+        updateDashboard("Agent returned home with gold")
+        logText("Agent returned home safely with gold.", "gold")
+      } else {
+        updateDashboard("Moved safely to [" + agent[0] + "," + agent[1] + "]")
+        logText("Moved to [" + agent[0] + "," + agent[1] + "].", "move")
+      }
+
+      drawGrid()
+    }
+
+    function autoRun() {
+      stopRun()
+
+      let speed = parseInt(document.getElementById("speed").value)
+
+      timer = setInterval(function () {
+        if (!alive || finished) {
+          stopRun()
+          return
+        }
+
+        moveAgent()
+      }, speed)
+    }
+
+    function stopRun() {
+      if (timer) {
+        clearInterval(timer)
+      }
+
+      timer = null
+    }
+
+    function drawGrid() {
+      let grid = document.getElementById("grid")
+      grid.innerHTML = ""
+      grid.style.gridTemplateColumns = "repeat(" + cols + ", 82px)"
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          let key = cellKey(r, c)
+          let div = document.createElement("div")
+
+          div.className = "cell unknown"
+          let text = "[" + r + "," + c + "]\nUnknown"
+
+          if (frontierCells.has(key)) {
+            div.className = "cell frontier"
+            text = "[" + r + "," + c + "]\nFrontier"
+          }
+
+          if (suspectedCells.has(key) && !safeCells.has(key)) {
+            div.className = "cell suspected"
+            text = "[" + r + "," + c + "]\nSuspected"
+          }
+
+          if (safeCells.has(key) && !visited.has(key)) {
+            div.className = "cell safe"
+            text = "[" + r + "," + c + "]\nSafe Path"
+          }
+
+          if (visited.has(key)) {
+            div.className = "cell visited"
+            text = "[" + r + "," + c + "]\nVisited"
+
+            let p = []
+
+            if (hasBreeze(r, c)) p.push("B")
+            if (hasStench(r, c)) p.push("S")
+
+            if (p.length > 0) {
+              text += "\n" + p.join(" ")
+            }
+          }
+
+          if (confirmedHazards.has(key)) {
+            div.className = "cell confirmed"
+            text = "[" + r + "," + c + "]\nConfirmed\nHazard"
+          }
+
+          if (deathCells.has(key)) {
+            div.className = "cell dead"
+            text = "[" + r + "," + c + "]\nAgent Died"
+          }
+
+          if (r === 0 && c === 0) {
+            div.classList.add("home")
+          }
+
+          if (r === gold[0] && c === gold[1] && (visited.has(key) || hasGold || finished)) {
+            div.classList.add("gold")
+            text += "\nGold"
+          }
+
+          if (r === agent[0] && c === agent[1]) {
+            div.classList.add("agent")
+            text += "\nAgent"
+          }
+
+          div.innerText = text
+          grid.appendChild(div)
+        }
+      }
+
+      updateCounts()
+    }
+
+    function updateDashboard(message) {
+      document.getElementById("status").innerText = message
+      updateCounts()
+    }
+
+    function updateCounts() {
+      document.getElementById("steps").innerText = totalSteps
+      document.getElementById("clauseCount").innerText = clauses.size
+      document.getElementById("safeCount").innerText = safeCells.size
+      document.getElementById("hazardCount").innerText = confirmedHazards.size
+
+      if (finished) {
+        document.getElementById("goldStatus").innerText = "Returned home"
+      } else if (hasGold) {
+        document.getElementById("goldStatus").innerText = "Collected"
+      } else {
+        document.getElementById("goldStatus").innerText = "Not found"
+      }
+    }
+
+    function logText(text, type) {
+      let log = document.getElementById("log")
+      let div = document.createElement("div")
+
+      if (type === "move") div.className = "log-move"
+      else if (type === "safe") div.className = "log-safe"
+      else if (type === "danger") div.className = "log-danger"
+      else if (type === "gold") div.className = "log-gold"
+      else div.className = "log-info"
+
+      div.innerText = text
+      log.prepend(div)
+    }
+
+    startGame()
+  </script>
+</body>
+</html>
